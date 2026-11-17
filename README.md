@@ -12,7 +12,8 @@ The example workload is
 compiles Node.js from source. Any Docker image with a long build works the same
 way.
 
-> **Status:** planning. Nothing is deployed yet; see [Roadmap](#roadmap).
+> **Status:** the cluster Terraform is written but not applied yet; see
+> [Roadmap](#roadmap).
 
 ## Why DigitalOcean
 
@@ -26,53 +27,76 @@ quarter as much.
 
 | Piece | Choice | Why |
 | --- | --- | --- |
-| Cluster | DOKS, free control plane (no HA add-on) | No hourly cluster fee |
-| System pool | One small node for the runner controller | DOKS needs at least one fixed node |
-| Build pool | CPU-Optimized 32 vCPU droplets, autoscaling **down to zero** | Pay only while a job runs |
+| Cluster | DOKS in `sfo2`, free control plane (`ha = false`) | No hourly cluster fee; the HA control plane would add $40/month |
+| System pool | One fixed `s-2vcpu-4gb` node for the runner controller | DigitalOcean recommends one fixed pool when another scales to zero |
+| Build pool | CPU-Optimized `c-32` (32 vCPU / 64 GiB), autoscaling **0 to 1**, tainted for runner pods only | Pay only while a job runs |
 | Runners | **Actions Runner Controller (ARC)** runner scale set `doks-amd64` | Ephemeral runner pod per job |
-| arm64 | Stays on GitHub's hosted arm64 runners | DigitalOcean doesn't offer ARM droplets (verify); GitHub's are free for public repos |
-| Compile cache | sccache with a **DigitalOcean Spaces** bucket (S3-compatible) | Never evicted, unlike the Actions cache; shared by both platforms ([docker-node-minimal#351](https://github.com/chorrell/docker-node-minimal/issues/351)) |
-| Infrastructure | Terraform (`terraform/`), Helm release for ARC | One `apply` / `destroy` |
+| arm64 | Stays on GitHub's hosted arm64 runners | DOKS offers no ARM node sizes (checked November 2026); GitHub's are free for public repos |
+| Compile cache | ccache in the **GitHub Actions cache**, as docker-node-minimal already does | About 1–2 GB in all, 70–100% hit rate when present, and served by GitHub to self-hosted runners too ([docker-node-minimal#351](https://github.com/chorrell/docker-node-minimal/issues/351)) |
+| Infrastructure | Terraform with state in HCP Terraform: `terraform/cluster` now, `terraform/arc` for the ARC Helm release next | Two roots, because the Helm and Kubernetes providers shouldn't be configured from a cluster created in the same root |
 
-**Open question:** DigitalOcean's docs say the cluster autoscaler can scale a
-node pool to zero, but a 2025 release note called it a preview and older docs
-required at least one node. Confirm before relying on it. The fallback: the
-workflow scales the build pool up with `doctl` before the job and back down
-after.
+CPU-Optimized sizes of 16 vCPU and up (`c-16`, `c-32`, `c-48`) are only
+offered in `blr1` and `sfo2`, which is why the cluster is in `sfo2`.
+
+**Scale-to-zero is not confirmed yet.** DigitalOcean's autoscaling docs allow
+`min_nodes = 0` and the cluster autoscaler has been generally available since
+April 2025, but the Terraform provider's docs (2.108.0) still call it private
+preview. `terraform validate` accepts it; whether the API does shows on the
+first apply (roadmap step 2). The fallback: the workflow scales the build pool
+up with `doctl` before the job and back down after, even when the job fails.
 
 ## Cost model
 
-Approximate prices as of November 2026; verify against
-[DOKS](https://www.digitalocean.com/pricing/kubernetes) and
-[Spaces](https://docs.digitalocean.com/products/spaces/details/pricing/) pricing.
+List prices as of November 2026, from
+[DOKS pricing](https://docs.digitalocean.com/products/kubernetes/details/pricing/)
+and `doctl compute size list`. Nothing has been measured yet.
 
 | Item | Monthly |
 | --- | --- |
-| DOKS control plane | $0 |
-| System node (2 vCPU / 4 GB) | ~$24 |
-| Build node, CPU-Optimized 32 vCPU (~$1/hr, estimated from smaller sizes) | ~$2–7 for a handful of builds, if it scales to zero |
-| Spaces (sccache) | $5 for 250 GB + 1 TB transfer |
+| DOKS control plane (no HA) | $0 |
+| System node, `s-2vcpu-4gb` | $24 |
+| Build node, `c-32` at $1.00/hour, billed per second | ~$2–7 for a handful of builds, if it scales to zero |
+| Compile cache (Actions cache, under the free 10 GB) | $0 |
 | NAT gateway | $0 (nodes have public IPs) |
-| **Total, always available** | **~$30–40** |
+| **Total, always available** | **~$26–31** |
 
 There are no spot instances on DigitalOcean, so build nodes are full price,
-but only while a job runs. A 32-vCPU node left running by mistake costs about
-$670/month, which is why scale-to-zero has to be confirmed first.
+but only while a job runs. A `c-32` left running by mistake costs $672/month,
+which is why scale-to-zero has to be confirmed first and `max_nodes` defaults
+to 1.
 
 ## Security
 
 - Runners only take jobs from repositories and workflows you list. **Never let
   pull requests from forks run here.**
-- ARC authenticates with a GitHub App; Spaces keys are scoped to the cache
-  bucket and stored as repository secrets.
+- ARC authenticates with a GitHub App. The DigitalOcean API token is a
+  sensitive variable on the HCP Terraform workspace, not in the repo.
+- The build pool is tainted, so only pods that tolerate it (the runners) are
+  scheduled there.
+
+## Deploying
+
+The cluster root runs in the `doks-runners-cluster` workspace in the `horrell`
+HCP Terraform organization, which is defined in
+[hcp-terraform-horrell](https://github.com/chorrell/hcp-terraform-horrell).
+Set `DIGITALOCEAN_TOKEN` on the workspace as a sensitive environment variable.
+Applies are confirmed by hand.
+
+After the first apply, fetch a kubeconfig with:
+
+```sh
+doctl kubernetes cluster kubeconfig save doks-runners
+```
 
 ## Roadmap
 
-1. Terraform: DOKS cluster, system pool, autoscaling build pool, Spaces bucket.
-2. Confirm scale-to-zero (or add the `doctl` fallback).
-3. ARC controller and the `doks-amd64` runner scale set; GitHub App auth.
+1. ~~Terraform: DOKS cluster, system pool, autoscaling build pool~~
+   (`terraform/cluster`).
+2. Apply it and confirm scale-to-zero (or add the `doctl` fallback).
+3. ARC controller and the `doks-amd64` runner scale set in `terraform/arc`;
+   GitHub App auth.
 4. Example workflow: docker-node-minimal amd64 on `doks-amd64`, arm64 on
-   GitHub's hosted arm runner, sccache on Spaces for both.
+   GitHub's hosted arm runner, ccache in the Actions cache for both.
 5. Measure cold and warm build times and cost per build, against GitHub-hosted
    runners and eks-spot-runners.
 6. Write up results here.
