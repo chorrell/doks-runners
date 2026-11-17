@@ -38,6 +38,27 @@ quarter as much.
 CPU-Optimized sizes of 16 vCPU and up (`c-16`, `c-32`, `c-48`) are only
 offered in `blr1` and `sfo2`, which is why the cluster is in `sfo2`.
 
+### Scale to zero
+
+"Scale to zero" means the build pool shrinks to **no nodes** when nothing is
+building, so it costs nothing while idle:
+
+1. While idle, the build pool has 0 nodes; only the system node runs.
+2. A queued job makes ARC create a runner pod. The pod can only run on a build
+   node, so it waits, and the cluster autoscaler adds a `c-32` node.
+3. The pod runs one job and exits.
+4. Once the node has been empty for 5 minutes (`scale_down_unneeded_time`), the
+   autoscaler deletes it and the pool is back at 0.
+
+A 30-minute build plus the 5-minute idle tail costs about $0.60. A pool that
+couldn't go below one node would cost $672/month whether anything built or
+not.
+
+**The trade-off is a cold start.** The first job after an idle period waits
+for a node to be created and join the cluster, which is likely a few minutes;
+DigitalOcean doesn't publish a figure, so roadmap step 5 measures it.
+Back-to-back jobs within the 5-minute window reuse the warm node.
+
 **Scale-to-zero is not confirmed yet.** DigitalOcean's autoscaling docs allow
 `min_nodes = 0` and the cluster autoscaler has been generally available since
 April 2025, but the Terraform provider's docs (2.108.0) still call it private
