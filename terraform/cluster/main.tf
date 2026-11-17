@@ -60,6 +60,8 @@ resource "digitalocean_kubernetes_node_pool" "build" {
   min_nodes  = 0
   max_nodes  = var.build_max_nodes
 
+  # Keeps every pod off build nodes unless it tolerates this taint; only runner pods will. Without it, an add-on
+  # or the ARC controller could land on a build node and keep it from scaling down, leaving it running at $1/hour.
   taint {
     key    = "doks-runners/pool"
     value  = "build"
