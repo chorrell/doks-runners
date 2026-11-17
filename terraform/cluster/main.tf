@@ -21,7 +21,10 @@ resource "digitalocean_kubernetes_cluster" "this" {
   # `ha` is omitted, so it must stay explicitly false.
   ha = false
 
-  auto_upgrade  = true
+  auto_upgrade = true
+
+  # Upgrades bring up each replacement node before draining the old one. With a single system node, upgrading
+  # without surge would take the ARC controller offline until the new node joins. The extra node costs cents.
   surge_upgrade = true
 
   maintenance_policy {
