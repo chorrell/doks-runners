@@ -32,7 +32,8 @@ updates:
   # Terraform providers and modules, kept out of the auto-merged `tooling`
   # group: a DigitalOcean provider bump can change the cluster.
   - package-ecosystem: "terraform"
-    directory: "/terraform"
+    directories:
+      - "/terraform/*"
     schedule:
       interval: "monthly"
     groups:
