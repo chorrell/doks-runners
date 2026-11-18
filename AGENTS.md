@@ -11,7 +11,7 @@ cost model and roadmap. The AWS version of the same idea is
 ```text
 ├── terraform/
 │   ├── cluster/                # DOKS cluster, fixed system pool, build pool (0–N, tainted); HCP workspace doks-runners-cluster
-│   └── arc/                    # (planned) ARC controller and runner scale set Helm releases; its own root and workspace
+│   └── arc/                    # ARC controller, runner scale set per repo (dind, build pool), GitHub App secret; HCP workspace doks-runners-arc
 ├── .pre-commit-config.yaml     # gitleaks, markdownlint-cli2 (Docker), hygiene hooks, zizmor, terraform fmt/validate/trivy
 ├── .markdownlint.yaml          # MD013 (line length) disabled
 ├── AGENTS.md / CLAUDE.md       # Agent guidance; CLAUDE.md only imports AGENTS.md
@@ -49,8 +49,24 @@ cost model and roadmap. The AWS version of the same idea is
 - **Never run fork pull requests on these runners.** The runner scale set is
   scoped to named repositories, and example workflows only run on push or
   `workflow_dispatch`.
-- **The token's scopes are listed in the README's Deploying section.** If a
-  change needs a new DigitalOcean API scope, update that table in the same PR.
+- **The tokens' scopes are listed in the README's Deploying section**, one
+  table per workspace. If a change needs a new DigitalOcean API scope, update
+  that table in the same PR. The `terraform/arc` token stays read-only.
+- **Runner scale sets keep `minRunners = 0`** and `max_runners` at or below the
+  cluster's `build_max_nodes`. An idle runner holds a `c-32` node up. Runner
+  pods get the build pool's node selector and toleration but no resource
+  requests: a request larger than a `c-32` leaves the pod pending with no node
+  added.
+- **The GitHub App private key only goes through `data_wo`.** Never pass it in
+  `helm_release` values or `set`, which are stored in state. Bump
+  `github_app_secret_revision` when the key changes.
+- **Upgrading ARC isn't a plain chart bump.** Helm can't upgrade ARC's CRDs, so
+  a new `arc_chart_version` means removing the scale sets, then the
+  controller, then the `actions.github.com` CRDs if they changed, and
+  reinstalling. Keep both charts on the same version. Dependabot doesn't track
+  the chart version.
+- Don't use `kubernetes_manifest` for ARC's custom resources: it fails at plan
+  time while the CRDs don't exist yet.
 - **No secrets in the repo.** ARC uses a GitHub App. `DIGITALOCEAN_TOKEN` is a
   sensitive variable on the HCP Terraform workspace (workspaces are defined in
   [hcp-terraform-horrell](https://github.com/chorrell/hcp-terraform-horrell)).

@@ -13,8 +13,8 @@ compiles Node.js from source. Any Docker image with a long build works the same
 way.
 
 > **Status:** the cluster is running (applied 18 November 2026) with the build
-> pool at 0 nodes. ARC isn't installed yet, so no jobs run here; see
-> [Roadmap](#roadmap).
+> pool at 0 nodes. The ARC root (`terraform/arc`) is written but not applied,
+> so no jobs run here yet; see [Roadmap](#roadmap).
 
 ## Why DigitalOcean
 
@@ -34,7 +34,7 @@ quarter as much.
 | Runners | **Actions Runner Controller (ARC)** runner scale set `doks-amd64` | Ephemeral runner pod per job |
 | arm64 | Stays on GitHub's hosted arm64 runners | DOKS offers no ARM node sizes (checked November 2026); GitHub's are free for public repos |
 | Compile cache | ccache in the **GitHub Actions cache**, as docker-node-minimal already does | About 1–2 GB in all, 70–100% hit rate when present, and served by GitHub to self-hosted runners too ([docker-node-minimal#351](https://github.com/chorrell/docker-node-minimal/issues/351)) |
-| Infrastructure | Terraform with state in HCP Terraform: `terraform/cluster` now, `terraform/arc` for the ARC Helm release next | Two roots, because the Helm and Kubernetes providers shouldn't be configured from a cluster created in the same root |
+| Infrastructure | Terraform with state in HCP Terraform: `terraform/cluster` for the cluster, `terraform/arc` for the ARC Helm releases | Two roots, because the Helm and Kubernetes providers shouldn't be configured from a cluster created in the same root |
 
 CPU-Optimized sizes of 16 vCPU and up (`c-16`, `c-32`, `c-48`) are only
 offered in `blr1` and `sfo2`, which is why the cluster is in `sfo2`.
@@ -96,17 +96,37 @@ which is why scale-down has to be confirmed before real jobs run here and
   sensitive variable on the HCP Terraform workspace, not in the repo.
 - The build pool is tainted, so only pods that tolerate it (the runners) are
   scheduled there.
+- Runner pods use ARC's `dind` mode, a **privileged** Docker daemon sidecar,
+  because the builds produce Docker images. That's acceptable only because the
+  build pool runs nothing else and workflows here never run for fork pull
+  requests.
+- The GitHub App needs **Administration: read and write** on each repository
+  to register runners there, which also lets it change that repository's
+  settings. Install it on the selected repositories only, never on all of
+  them. Its private key is written to the cluster through a write-only
+  argument, so it isn't in Terraform state; the cluster's kube token is in
+  both workspaces' state.
 
 ## Deploying
 
-The cluster root runs in the `doks-runners-cluster` workspace in the `horrell`
-HCP Terraform organization, which is defined in
+Each root has its own workspace in the `horrell` HCP Terraform organization,
+defined in
 [hcp-terraform-horrell](https://github.com/chorrell/hcp-terraform-horrell).
-Applies are confirmed by hand.
+Applies are confirmed by hand in both.
 
-`DIGITALOCEAN_TOKEN` is a sensitive environment variable on the workspace. It
-holds a personal access token named `hcp-terraform-doks-runners-cluster`,
-created under **Account → API → Tokens** with **Custom Scopes**:
+| Root | Workspace | Creates |
+| --- | --- | --- |
+| `terraform/cluster` | `doks-runners-cluster` | The cluster, system pool and build pool |
+| `terraform/arc` | `doks-runners-arc` | The ARC controller, a runner scale set per repository, and the GitHub App secret |
+
+Apply `terraform/cluster` first; `terraform/arc` reads the cluster by name.
+
+### Cluster token
+
+`DIGITALOCEAN_TOKEN` on `doks-runners-cluster` is a sensitive environment
+variable. It holds a personal access token named
+`hcp-terraform-doks-runners-cluster`, created under **Account → API → Tokens**
+with **Custom Scopes**:
 
 | Resource | Scopes | Why |
 | --- | --- | --- |
@@ -115,11 +135,43 @@ created under **Account → API → Tokens** with **Custom Scopes**:
 | tag | `read`, `create` | The cluster and build pool are tagged `doks-runners` |
 | vpc | `read` | The cluster joins the region's default VPC |
 
-A token's scopes can't be changed after it's created, so adding one means
-generating a new token and replacing the variable's value. Rotate it before it
-expires; an expired token makes every run fail.
+### ARC token
 
-After the first apply, fetch a kubeconfig with:
+`doks-runners-arc` only reads the cluster, so its `DIGITALOCEAN_TOKEN` is a
+separate, read-only token named `hcp-terraform-doks-runners-arc`:
+
+| Resource | Scopes | Why |
+| --- | --- | --- |
+| kubernetes | `read`, `access_cluster` | Read the cluster and fetch its credentials for the Helm and Kubernetes providers |
+| regions, sizes, actions | `read` | Required by every kubernetes scope |
+
+A token's scopes can't be changed after it's created, so adding one means
+generating a new token and replacing the variable's value. Rotate both tokens
+before they expire; an expired token makes every run fail.
+
+### GitHub App
+
+ARC registers runners through a GitHub App owned by the chorrell account:
+
+1. Register a GitHub App under the personal account. Disable the webhook.
+   Repository permissions: **Administration: read and write**, **Metadata:
+   read-only**. Install it **only on this account**.
+2. Install it on the repositories in `repositories` (`terraform/arc`), with
+   **Only select repositories**.
+3. Generate a private key.
+4. On `doks-runners-arc`, set:
+   - `github_app_id` and `github_app_installation_id`: plain Terraform
+     variables (not secret), managed in hcp-terraform-horrell's
+     `workspace_variables.tf`.
+   - `github_app_private_key`: a **sensitive** Terraform variable holding the
+     full PEM.
+
+To rotate the key, set the new value and bump `github_app_secret_revision`;
+write-only values aren't compared, so changing the key alone does nothing.
+
+### Kubeconfig
+
+After the cluster's first apply, fetch a kubeconfig with:
 
 ```sh
 doctl kubernetes cluster kubeconfig save doks-runners
@@ -130,9 +182,9 @@ doctl kubernetes cluster kubeconfig save doks-runners
 1. ~~Terraform: DOKS cluster, system pool, autoscaling build pool~~
    (`terraform/cluster`).
 2. ~~Apply it~~ (18 November 2026; the build pool sits at 0 nodes).
-3. ARC controller and the `doks-amd64` runner scale set in `terraform/arc`;
-   GitHub App auth. Confirm the build pool scales up for a job and back to 0
-   after it (or add the `doctl` fallback).
+3. ARC controller and the `doks-amd64` runner scale set in `terraform/arc`
+   (written, not applied); GitHub App auth. Confirm the build pool scales up
+   for a job and back to 0 after it (or add the `doctl` fallback).
 4. Example workflow: docker-node-minimal amd64 on `doks-amd64`, arm64 on
    GitHub's hosted arm runner, ccache in the Actions cache for both.
 5. Measure cold and warm build times and cost per build, against GitHub-hosted
