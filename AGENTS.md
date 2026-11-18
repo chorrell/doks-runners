@@ -1,7 +1,7 @@
 # AGENTS.md
 
 Generic self-hosted GitHub Actions runners on DigitalOcean Kubernetes (DOKS)
-for any horrell-consulting repository that opts in: always available at a low idle cost,
+for every repository in the horrell-consulting organization: always available at a low idle cost,
 with `c-8` and `c-32` build pools (`runs-on: doks-amd64` and
 `doks-amd64-large`) that scale to zero between jobs. See [README.md](README.md) for the design,
 cost model and roadmap. The AWS version of the same idea is
@@ -12,7 +12,7 @@ cost model and roadmap. The AWS version of the same idea is
 ```text
 ├── terraform/
 │   ├── cluster/                # DOKS cluster, fixed system pool, build pools (map, each 0–N, tainted); HCP workspace doks-runners-cluster
-│   └── arc/                    # ARC controller, scale set per repo × pool (dind), GitHub App secret; HCP workspace doks-runners-arc
+│   └── arc/                    # ARC controller, org-scoped scale set per pool (dind), GitHub App secret; HCP workspace doks-runners-arc
 ├── .pre-commit-config.yaml     # gitleaks, markdownlint-cli2 (Docker), hygiene hooks, zizmor, terraform fmt/validate/trivy
 ├── .markdownlint.yaml          # MD013 (line length) disabled
 ├── AGENTS.md / CLAUDE.md       # Agent guidance; CLAUDE.md only imports AGENTS.md
@@ -55,10 +55,12 @@ cost model and roadmap. The AWS version of the same idea is
   DigitalOcean offers ARM droplets.
 - **Never run fork pull requests on these runners.** Workflows that use them
   run on push or `workflow_dispatch`, but a fork PR brings its own workflow
-  files, and the runners are privileged. What actually enforces this is each
-  repository's fork-PR approval policy, set to "all external contributors".
-  Don't add a repository to `repositories` until it has that policy, and only
-  add horrell-consulting repositories.
+  files, and the runners are privileged. What actually enforces this is the
+  organization's fork-PR approval policy, "all external contributors", which
+  every repository inherits. The runners are in the organization's Default
+  runner group, which GitHub Free can't limit to selected repositories or
+  workflows, so every repository in the organization can use them. Don't set
+  `runners_enabled` unless that policy is in place.
 - **The tokens' scopes are listed in the README's Deploying section**, one
   table per workspace. If a change needs a new DigitalOcean API scope, update
   that table in the same PR. The `terraform/arc` token stays read-only.

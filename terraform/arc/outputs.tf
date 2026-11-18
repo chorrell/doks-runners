@@ -8,7 +8,12 @@ output "runner_namespace" {
   value       = kubernetes_namespace_v1.runners.metadata[0].name
 }
 
-output "repositories" {
-  description = "Repositories with runners."
-  value       = sort(var.repositories)
+output "github_config_url" {
+  description = "Where the runners register: the organization. Empty scale sets until runners_enabled is set."
+  value       = local.github_config_url
+}
+
+output "runners_enabled" {
+  description = "Whether the runner scale sets exist."
+  value       = var.runners_enabled
 }

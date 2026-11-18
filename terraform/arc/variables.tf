@@ -10,13 +10,19 @@ variable "arc_chart_version" {
   default     = "0.15.1"
 }
 
-variable "repositories" {
+variable "github_organization" {
+  description = "GitHub organization the runners register in. Every repository in it can use them."
+  type        = string
+  default     = "horrell-consulting"
+}
+
+variable "runners_enabled" {
   description = <<-EOT
-    Repositories (owner/name) that get runners. chorrell is a personal account, so runners register per repository.
-    Before adding one: install the GitHub App on it and set its fork-PR approval to all external contributors.
+    Create the GitHub App secret and one runner scale set per pool. Before setting it: the GitHub App is installed on
+    the organization and its variables are set, and the organization's fork-PR approval is all external contributors.
   EOT
-  type        = set(string)
-  default     = []
+  type        = bool
+  default     = false
 }
 
 variable "runner_pools" {
@@ -40,13 +46,13 @@ variable "runner_pools" {
 }
 
 variable "github_app_id" {
-  description = "ID of the GitHub App ARC authenticates with. Not secret. Needed once a repository is listed."
+  description = "ID of the GitHub App ARC authenticates with. Not secret. Needed once runners_enabled is set."
   type        = string
   default     = null
 }
 
 variable "github_app_installation_id" {
-  description = "Installation ID of the GitHub App on the chorrell account. Not secret. Needed once a repository is listed."
+  description = "Installation ID of the GitHub App on the organization. Not secret. Needed once runners_enabled is set."
   type        = string
   default     = null
 }
