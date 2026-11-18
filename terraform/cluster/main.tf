@@ -1,9 +1,10 @@
 locals {
   name = "doks-runners"
 
-  # Runner pods select the build pool with this label and tolerate its taint. Nothing else lands there, so the
-  # autoscaler can remove the last build node as soon as the job's pod is gone.
-  build_pool_label = { "doks-runners/pool" = "build" }
+  # Runner pods select a build pool by its doks-runners/pool label and tolerate the shared taint. Nothing else lands
+  # on build nodes, so the autoscaler can remove the last one as soon as the job's pod is gone.
+  pool_label_key = "doks-runners/pool"
+  build_taint    = { key = "doks-runners/runner", value = "true", effect = "NoSchedule" }
 }
 
 # A data source, not "latest", so a patch upgrade by auto_upgrade doesn't show up as drift.
@@ -49,22 +50,30 @@ resource "digitalocean_kubernetes_cluster" "this" {
 }
 
 resource "digitalocean_kubernetes_node_pool" "build" {
+  for_each = var.build_pools
+
   cluster_id = digitalocean_kubernetes_cluster.this.id
-  name       = "build"
-  size       = var.build_node_size
+  name       = each.key
+  size       = each.value.size
   tags       = [local.name]
-  labels     = local.build_pool_label
+  labels     = { (local.pool_label_key) = each.key }
 
   # Scale to zero between jobs. node_count is left unset so Terraform doesn't fight the autoscaler.
   auto_scale = true
   min_nodes  = 0
-  max_nodes  = var.build_max_nodes
+  max_nodes  = each.value.max_nodes
 
   # Keeps every pod off build nodes unless it tolerates this taint; only runner pods will. Without it, an add-on
-  # or the ARC controller could land on a build node and keep it from scaling down, leaving it running at $1/hour.
+  # or the ARC controller could land on a build node and keep it from scaling down, leaving it running at full price.
   taint {
-    key    = "doks-runners/pool"
-    value  = "build"
-    effect = "NoSchedule"
+    key    = local.build_taint.key
+    value  = local.build_taint.value
+    effect = local.build_taint.effect
   }
+}
+
+# The single c-32 "build" pool became the "large" pool when the general pool was added.
+moved {
+  from = digitalocean_kubernetes_node_pool.build
+  to   = digitalocean_kubernetes_node_pool.build["large"]
 }

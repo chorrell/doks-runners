@@ -1,6 +1,6 @@
 output "runs_on" {
-  description = "Label for `runs-on` in workflows."
-  value       = var.runner_scale_set_name
+  description = "runs-on label for each build pool."
+  value       = { for pool, cfg in var.runner_pools : pool => cfg.runs_on }
 }
 
 output "runner_namespace" {
@@ -9,6 +9,6 @@ output "runner_namespace" {
 }
 
 output "repositories" {
-  description = "Repositories with a runner scale set."
+  description = "Repositories with runners."
   value       = sort(var.repositories)
 }

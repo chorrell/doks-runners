@@ -16,19 +16,27 @@ variable "system_node_size" {
   default     = "s-2vcpu-4gb"
 }
 
-variable "build_node_size" {
-  description = "Droplet size for the build pool. c-32 is 32 vCPU / 64 GiB at $1.00/hour."
-  type        = string
-  default     = "c-32"
-}
-
-variable "build_max_nodes" {
-  description = "Upper bound on build nodes. Each c-32 left running costs about $672/month, so keep this small."
-  type        = number
-  default     = 1
+variable "build_pools" {
+  description = <<-EOT
+    Autoscaling build pools, keyed by pool name. Each scales between 0 and max_nodes and gets its own runs-on label in
+    terraform/arc. Every node left running costs its full hourly price (c-8 $0.25, c-32 $1.00), so keep max_nodes small.
+  EOT
+  type = map(object({
+    size      = string
+    max_nodes = number
+  }))
+  default = {
+    general = { size = "c-8", max_nodes = 1 }
+    large   = { size = "c-32", max_nodes = 1 }
+  }
 
   validation {
-    condition     = var.build_max_nodes >= 1 && var.build_max_nodes <= 4
-    error_message = "build_max_nodes must be between 1 and 4."
+    condition     = alltrue([for p in values(var.build_pools) : p.max_nodes >= 1 && p.max_nodes <= 4])
+    error_message = "Each pool's max_nodes must be between 1 and 4."
+  }
+
+  validation {
+    condition     = alltrue([for name in keys(var.build_pools) : can(regex("^[a-z][a-z0-9-]*$", name))])
+    error_message = "Pool names must be lowercase letters, digits and hyphens; they become node labels and pool names."
   }
 }

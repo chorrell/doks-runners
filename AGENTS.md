@@ -1,8 +1,9 @@
 # AGENTS.md
 
-Self-hosted GitHub Actions runners on DigitalOcean Kubernetes (DOKS): a
-low-cost build fleet that can stay up all the time, with a 32-vCPU build pool
-that scales to zero between jobs. See [README.md](README.md) for the design,
+Generic self-hosted GitHub Actions runners on DigitalOcean Kubernetes (DOKS)
+for any chorrell repository that opts in: always available at a low idle cost,
+with `c-8` and `c-32` build pools (`runs-on: doks-amd64` and
+`doks-amd64-large`) that scale to zero between jobs. See [README.md](README.md) for the design,
 cost model and roadmap. The AWS version of the same idea is
 [eks-spot-runners](https://github.com/chorrell/eks-spot-runners).
 
@@ -10,8 +11,8 @@ cost model and roadmap. The AWS version of the same idea is
 
 ```text
 ├── terraform/
-│   ├── cluster/                # DOKS cluster, fixed system pool, build pool (0–N, tainted); HCP workspace doks-runners-cluster
-│   └── arc/                    # ARC controller, runner scale set per repo (dind, build pool), GitHub App secret; HCP workspace doks-runners-arc
+│   ├── cluster/                # DOKS cluster, fixed system pool, build pools (map, each 0–N, tainted); HCP workspace doks-runners-cluster
+│   └── arc/                    # ARC controller, scale set per repo × pool (dind), GitHub App secret; HCP workspace doks-runners-arc
 ├── .pre-commit-config.yaml     # gitleaks, markdownlint-cli2 (Docker), hygiene hooks, zizmor, terraform fmt/validate/trivy
 ├── .markdownlint.yaml          # MD013 (line length) disabled
 ├── AGENTS.md / CLAUDE.md       # Agent guidance; CLAUDE.md only imports AGENTS.md
@@ -31,34 +32,41 @@ cost model and roadmap. The AWS version of the same idea is
   when omitted, it costs $40/month, and it can't be turned off), no load
   balancers, no always-on build nodes. If a change adds a cost that runs while
   idle, call it out in the PR.
-- **The build pool must scale to zero.** A `c-32` node left running costs
-  $672/month. Don't set `node_count` on the build pool (it fights the
-  autoscaler) and keep `max_nodes` small. If autoscaler scale-to-zero isn't
-  reliable, the workflow scales the pool with `doctl` and must scale it back
-  down even when the build fails.
+- **Every build pool must scale to zero.** A node left running costs its
+  full price: $168/month for `c-8`, $672/month for `c-32`. Don't set
+  `node_count` on build pools (it fights the autoscaler) and keep `max_nodes`
+  small. If autoscaler scale-to-zero isn't reliable, workflows scale the pool
+  with `doctl` and must scale it back down even when the job fails.
+- **Pool names tie the two roots together.** `build_pools` (cluster) and
+  `runner_pools` (arc) use the same keys; the key is the node label value
+  runner pods select. The label key and the shared taint are repeated in both
+  roots' locals; change them together.
 - **Region is `sfo2`** because CPU-Optimized sizes of 16 vCPU and up are only
   offered there and in `blr1`. Check `doctl compute size list` before
   changing the region or build size.
 - **Keep the cluster and the in-cluster resources in separate roots.**
   `terraform/cluster` creates the cluster; Helm and Kubernetes provider
   resources go in another root that reads the cluster through a data source.
-- The compile cache is ccache in the GitHub Actions cache, not object storage
-  ([docker-node-minimal#351](https://github.com/chorrell/docker-node-minimal/issues/351)).
+- **The runners are generic.** Don't tailor the cluster or runner config to
+  one repository's build. Repositories bring their own tools (`setup-*`
+  actions or containers) and use the GitHub Actions cache; there's no shared
+  cache storage.
 - **amd64 builds here; arm64 stays on GitHub's hosted arm runners** unless
   DigitalOcean offers ARM droplets.
-- **Never run fork pull requests on these runners.** Workflows only run on
-  push or `workflow_dispatch`, but a fork PR brings its own workflow files,
-  and the runners are privileged. What actually enforces this is each
+- **Never run fork pull requests on these runners.** Workflows that use them
+  run on push or `workflow_dispatch`, but a fork PR brings its own workflow
+  files, and the runners are privileged. What actually enforces this is each
   repository's fork-PR approval policy, set to "all external contributors".
-  Don't add a repository to `repositories` until it has that policy.
+  Don't add a repository to `repositories` until it has that policy, and only
+  add repositories chorrell controls.
 - **The tokens' scopes are listed in the README's Deploying section**, one
   table per workspace. If a change needs a new DigitalOcean API scope, update
   that table in the same PR. The `terraform/arc` token stays read-only.
-- **Runner scale sets keep `minRunners = 0`** and `max_runners` at or below the
-  cluster's `build_max_nodes`. An idle runner holds a `c-32` node up. Runner
-  pods get the build pool's node selector and toleration but no resource
-  requests: a request larger than a `c-32` leaves the pod pending with no node
-  added.
+- **Runner scale sets keep `minRunners = 0`** and each pool's `max_runners`
+  at or below its `max_nodes`. An idle runner holds a build node up. Runner
+  pods get their pool's node selector and the shared toleration but no resource
+  requests: a request larger than the node leaves the pod pending with no
+  node added.
 - **The GitHub App private key only goes through `data_wo`.** Never pass it in
   `helm_release` values or `set`, which are stored in state. Bump
   `github_app_secret_revision` when the key changes.
