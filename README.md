@@ -12,7 +12,8 @@ The example workload is
 compiles Node.js from source. Any Docker image with a long build works the same
 way.
 
-> **Status:** the cluster Terraform is written but not applied yet; see
+> **Status:** the cluster is running (applied 18 November 2026) with the build
+> pool at 0 nodes. ARC isn't installed yet, so no jobs run here; see
 > [Roadmap](#roadmap).
 
 ## Why DigitalOcean
@@ -59,12 +60,13 @@ for a node to be created and join the cluster, which is likely a few minutes;
 DigitalOcean doesn't publish a figure, so roadmap step 5 measures it.
 Back-to-back jobs within the 5-minute window reuse the warm node.
 
-**Scale-to-zero is not confirmed yet.** DigitalOcean's autoscaling docs allow
-`min_nodes = 0` and the cluster autoscaler has been generally available since
-April 2025, but the Terraform provider's docs (2.108.0) still call it private
-preview. `terraform validate` accepts it; whether the API does shows on the
-first apply (roadmap step 2). The fallback: the workflow scales the build pool
-up with `doctl` before the job and back down after, even when the job fails.
+**Scale-to-zero is half confirmed.** The Terraform provider's docs (2.108.0)
+still call `min_nodes = 0` private preview, but the API accepted it on the
+first apply, and the build pool sits at 0 nodes. What's left to confirm, once
+ARC is installed (roadmap step 3), is the other half: the autoscaler adding a
+node for a pending runner pod and removing it after the idle window. If that
+doesn't work, the fallback is for the workflow to scale the build pool up with
+`doctl` before the job and back down after, even when the job fails.
 
 ## Cost model
 
@@ -83,8 +85,8 @@ and `doctl compute size list`. Nothing has been measured yet.
 
 There are no spot instances on DigitalOcean, so build nodes are full price,
 but only while a job runs. A `c-32` left running by mistake costs $672/month,
-which is why scale-to-zero has to be confirmed first and `max_nodes` defaults
-to 1.
+which is why scale-down has to be confirmed before real jobs run here and
+`max_nodes` defaults to 1.
 
 ## Security
 
@@ -100,8 +102,22 @@ to 1.
 The cluster root runs in the `doks-runners-cluster` workspace in the `horrell`
 HCP Terraform organization, which is defined in
 [hcp-terraform-horrell](https://github.com/chorrell/hcp-terraform-horrell).
-Set `DIGITALOCEAN_TOKEN` on the workspace as a sensitive environment variable.
 Applies are confirmed by hand.
+
+`DIGITALOCEAN_TOKEN` is a sensitive environment variable on the workspace. It
+holds a personal access token named `hcp-terraform-doks-runners-cluster`,
+created under **Account → API → Tokens** with **Custom Scopes**:
+
+| Resource | Scopes | Why |
+| --- | --- | --- |
+| kubernetes | `create`, `read`, `update`, `delete`, `access_cluster` | Manage the cluster and build pool. The provider fetches the cluster credentials during create, so `access_cluster` is required: without it the apply fails with a 403 after the cluster exists, leaving it tainted. |
+| regions, sizes, actions | `read` | Required by every kubernetes scope |
+| tag | `read`, `create` | The cluster and build pool are tagged `doks-runners` |
+| vpc | `read` | The cluster joins the region's default VPC |
+
+A token's scopes can't be changed after it's created, so adding one means
+generating a new token and replacing the variable's value. Rotate it before it
+expires; an expired token makes every run fail.
 
 After the first apply, fetch a kubeconfig with:
 
@@ -113,9 +129,10 @@ doctl kubernetes cluster kubeconfig save doks-runners
 
 1. ~~Terraform: DOKS cluster, system pool, autoscaling build pool~~
    (`terraform/cluster`).
-2. Apply it and confirm scale-to-zero (or add the `doctl` fallback).
+2. ~~Apply it~~ (18 November 2026; the build pool sits at 0 nodes).
 3. ARC controller and the `doks-amd64` runner scale set in `terraform/arc`;
-   GitHub App auth.
+   GitHub App auth. Confirm the build pool scales up for a job and back to 0
+   after it (or add the `doctl` fallback).
 4. Example workflow: docker-node-minimal amd64 on `doks-amd64`, arm64 on
    GitHub's hosted arm runner, ccache in the Actions cache for both.
 5. Measure cold and warm build times and cost per build, against GitHub-hosted

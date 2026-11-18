@@ -49,6 +49,8 @@ cost model and roadmap. The AWS version of the same idea is
 - **Never run fork pull requests on these runners.** The runner scale set is
   scoped to named repositories, and example workflows only run on push or
   `workflow_dispatch`.
+- **The token's scopes are listed in the README's Deploying section.** If a
+  change needs a new DigitalOcean API scope, update that table in the same PR.
 - **No secrets in the repo.** ARC uses a GitHub App. `DIGITALOCEAN_TOKEN` is a
   sensitive variable on the HCP Terraform workspace (workspaces are defined in
   [hcp-terraform-horrell](https://github.com/chorrell/hcp-terraform-horrell)).
