@@ -1,7 +1,7 @@
 # AGENTS.md
 
 Generic self-hosted GitHub Actions runners on DigitalOcean Kubernetes (DOKS)
-for any chorrell repository that opts in: always available at a low idle cost,
+for any horrell-consulting repository that opts in: always available at a low idle cost,
 with `c-8` and `c-32` build pools (`runs-on: doks-amd64` and
 `doks-amd64-large`) that scale to zero between jobs. See [README.md](README.md) for the design,
 cost model and roadmap. The AWS version of the same idea is
@@ -58,7 +58,7 @@ cost model and roadmap. The AWS version of the same idea is
   files, and the runners are privileged. What actually enforces this is each
   repository's fork-PR approval policy, set to "all external contributors".
   Don't add a repository to `repositories` until it has that policy, and only
-  add repositories chorrell controls.
+  add horrell-consulting repositories.
 - **The tokens' scopes are listed in the README's Deploying section**, one
   table per workspace. If a change needs a new DigitalOcean API scope, update
   that table in the same PR. The `terraform/arc` token stays read-only.
@@ -92,7 +92,7 @@ cost model and roadmap. The AWS version of the same idea is
   Reference same-repository workflows with `$/` syntax, not `./`.
 - **Repository settings aren't configured here.** Merge settings, rulesets and
   required status checks live in
-  [chorrell/github-settings](https://github.com/chorrell/github-settings)
+  [horrell-consulting/github-settings](https://github.com/horrell-consulting/github-settings)
   (`repos.yaml`). Don't change them in the GitHub UI.
 - Run `prek run --all-files` before pushing (markdownlint needs Docker; the
   Terraform hooks need `terraform` and `trivy`, and CI skips them).

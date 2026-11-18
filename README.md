@@ -1,6 +1,6 @@
 # doks-runners
 
-[![zizmor](https://github.com/chorrell/doks-runners/actions/workflows/zizmor.yml/badge.svg)](https://github.com/chorrell/doks-runners/actions/workflows/zizmor.yml)
+[![zizmor](https://github.com/horrell-consulting/doks-runners/actions/workflows/zizmor.yml/badge.svg)](https://github.com/horrell-consulting/doks-runners/actions/workflows/zizmor.yml)
 
 Generic self-hosted GitHub Actions runners on **DigitalOcean Kubernetes
 (DOKS)** for any repository that opts in: bigger machines than GitHub's
