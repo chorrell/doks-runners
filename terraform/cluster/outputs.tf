@@ -13,12 +13,15 @@ output "kubernetes_version" {
   value       = digitalocean_kubernetes_cluster.this.version
 }
 
-output "build_pool_id" {
-  description = "Build pool ID, for the doctl scale-up/scale-down fallback if autoscaling to zero doesn't work."
-  value       = digitalocean_kubernetes_node_pool.build.id
+output "build_pool_ids" {
+  description = "Build pool IDs by pool name, for the doctl scale-up/scale-down fallback if autoscaling to zero doesn't work."
+  value       = { for name, pool in digitalocean_kubernetes_node_pool.build : name => pool.id }
 }
 
-output "build_pool_selector" {
-  description = "Node label and taint that runner pods must select and tolerate."
-  value       = local.build_pool_label
+output "build_pool_scheduling" {
+  description = "Node label key (its value is the pool name) and the taint that runner pods must select and tolerate."
+  value = {
+    label_key = local.pool_label_key
+    taint     = local.build_taint
+  }
 }
