@@ -18,10 +18,10 @@ Jobs pick a size with `runs-on`:
 Runners use ARC's default image, which is minimal: jobs install what they need
 with `setup-*` actions or run in containers, and Docker is available.
 
-> **Status:** the cluster is running (applied 18 November 2026) with one
-> `c-32` build pool at 0 nodes; the `c-8` pool comes with the next apply. The
-> ARC root (`terraform/arc`) is written but not applied, and no repository has
-> runners yet; see [Roadmap](#roadmap).
+> **Status:** the cluster is running with both build pools (`c-8` and
+> `c-32`) at 0 nodes, as of 18 November 2026. The ARC root (`terraform/arc`)
+> is written but not applied, and no repository has runners yet; see
+> [Roadmap](#roadmap).
 
 ## Why DigitalOcean
 
@@ -73,7 +73,7 @@ Back-to-back jobs within the 5-minute window reuse the warm node.
 
 **Scale-to-zero is half confirmed.** The Terraform provider's docs (2.108.0)
 still call `min_nodes = 0` private preview, but the API accepted it on the
-first apply, and the `c-32` pool sits at 0 nodes. What's left to confirm,
+first apply, and both pools sit at 0 nodes. What's left to confirm,
 once ARC is installed, is the other half: the autoscaler adding a node for a
 pending runner pod and removing it after the idle window. If that doesn't
 work, the fallback is for workflows to scale the pool up with `doctl` before
@@ -211,9 +211,10 @@ doctl kubernetes cluster kubeconfig save doks-runners
 1. ~~Terraform: DOKS cluster, system pool, autoscaling build pool~~
    (`terraform/cluster`).
 2. ~~Apply it~~ (18 November 2026; the build pool sits at 0 nodes).
-3. ARC controller and runner scale sets in `terraform/arc`, and a second,
-   `c-8` build pool for generic jobs (written, not applied). Apply with no
-   repositories, so only the controller is installed.
+3. ~~A second, `c-8` build pool for generic jobs~~ (applied 18 November
+   2026). ARC controller and runner scale sets in `terraform/arc` (written,
+   not applied): apply with no repositories, so only the controller is
+   installed.
 4. GitHub App, then the first repository. Confirm each pool scales up for a
    job and back to 0 after it (or add the `doctl` fallback).
 5. Measure cold-start time and cost per job on both labels, against
