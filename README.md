@@ -90,16 +90,21 @@ which is why scale-down has to be confirmed before real jobs run here and
 
 ## Security
 
-- Runners only take jobs from repositories and workflows you list. **Never let
-  pull requests from forks run here.**
+- **Never let pull requests from forks run here.** A runner registered on a
+  repository runs any job that asks for `runs-on: doks-amd64`, including a
+  workflow a fork pull request adds or edits, and a personal account can't
+  restrict a runner to selected workflows. On a public repository the guard is
+  its fork-PR approval policy: **Require approval for all external
+  contributors**. Set it before the repository gets a scale set; the GitHub
+  provider can't manage it, so it isn't in github-settings.
 - ARC authenticates with a GitHub App. The DigitalOcean API token is a
   sensitive variable on the HCP Terraform workspace, not in the repo.
 - The build pool is tainted, so only pods that tolerate it (the runners) are
   scheduled there.
 - Runner pods use ARC's `dind` mode, a **privileged** Docker daemon sidecar,
-  because the builds produce Docker images. That's acceptable only because the
-  build pool runs nothing else and workflows here never run for fork pull
-  requests.
+  because the builds produce Docker images. A job that runs here effectively
+  has root on the build node. That's acceptable only because the build pool
+  runs nothing else and fork pull requests can't run without your approval.
 - The GitHub App needs **Administration: read and write** on each repository
   to register runners there, which also lets it change that repository's
   settings. Install it on the selected repositories only, never on all of
@@ -151,7 +156,10 @@ before they expire; an expired token makes every run fail.
 
 ### GitHub App
 
-ARC registers runners through a GitHub App owned by the chorrell account:
+ARC registers runners through a GitHub App owned by the chorrell account.
+Before a repository gets a scale set, set its fork-PR approval policy to
+**Require approval for all external contributors** (Settings → Actions →
+General); see [Security](#security).
 
 1. Register a GitHub App under the personal account. Disable the webhook.
    Repository permissions: **Administration: read and write**, **Metadata:

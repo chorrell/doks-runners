@@ -46,9 +46,11 @@ cost model and roadmap. The AWS version of the same idea is
   ([docker-node-minimal#351](https://github.com/chorrell/docker-node-minimal/issues/351)).
 - **amd64 builds here; arm64 stays on GitHub's hosted arm runners** unless
   DigitalOcean offers ARM droplets.
-- **Never run fork pull requests on these runners.** The runner scale set is
-  scoped to named repositories, and example workflows only run on push or
-  `workflow_dispatch`.
+- **Never run fork pull requests on these runners.** Workflows only run on
+  push or `workflow_dispatch`, but a fork PR brings its own workflow files,
+  and the runners are privileged. What actually enforces this is each
+  repository's fork-PR approval policy, set to "all external contributors".
+  Don't add a repository to `repositories` until it has that policy.
 - **The tokens' scopes are listed in the README's Deploying section**, one
   table per workspace. If a change needs a new DigitalOcean API scope, update
   that table in the same PR. The `terraform/arc` token stays read-only.
