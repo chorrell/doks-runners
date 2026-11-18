@@ -3,7 +3,7 @@
 [![zizmor](https://github.com/horrell-consulting/doks-runners/actions/workflows/zizmor.yml/badge.svg)](https://github.com/horrell-consulting/doks-runners/actions/workflows/zizmor.yml)
 
 Generic self-hosted GitHub Actions runners on **DigitalOcean Kubernetes
-(DOKS)** for any repository that opts in: bigger machines than GitHub's
+(DOKS)** for the repositories in the `horrell-consulting` organization: bigger machines than GitHub's
 standard runners, available all the time at a low idle cost, because DOKS
 doesn't charge for the control plane and the build pools scale down to zero
 between jobs. Runner pods are ephemeral (one job each).
@@ -20,7 +20,7 @@ with `setup-*` actions or run in containers, and Docker is available.
 
 > **Status:** as of 18 November 2026 the cluster is running with both build
 > pools (`c-8` and `c-32`) at 0 nodes, and the ARC controller is installed on
-> the system node. No repository has runners yet: that waits for the GitHub
+> the system node. No runners are registered yet: that waits for the GitHub
 > App. See [Roadmap](#roadmap).
 
 ## Why DigitalOcean
@@ -38,8 +38,8 @@ quarter as much.
 | Cluster | DOKS in `sfo2`, free control plane (`ha = false`) | No hourly cluster fee; the HA control plane would add $40/month |
 | System pool | One fixed `s-2vcpu-4gb` node for the runner controller | DigitalOcean recommends one fixed pool when another scales to zero |
 | Build pools | CPU-Optimized `general` (`c-8`) and `large` (`c-32`), each autoscaling **0 to 1**, tainted for runner pods only | Pay only while a job runs; one runner per node |
-| Runners | **Actions Runner Controller (ARC)**: one runner scale set per repository and pool, ARC's default image, `dind` mode | Ephemeral runner pod per job; Docker builds, container jobs and service containers work |
-| Repositories | Opt in one at a time (`repositories` in `terraform/arc`) | chorrell is a personal account, so runners register per repository rather than once for an organization |
+| Runners | **Actions Runner Controller (ARC)**: one runner scale set per pool, ARC's default image, `dind` mode | Ephemeral runner pod per job; Docker builds, container jobs and service containers work |
+| Repositories | Every repository in `horrell-consulting`: the scale sets register once for the organization, in its Default runner group | One scale set per pool instead of one per repository and pool. On GitHub Free the Default group is the only one, and it can't be limited to selected repositories or workflows |
 | arm64 | Stays on GitHub's hosted arm64 runners | DOKS offers no ARM node sizes (checked November 2026); GitHub's are free for public repos |
 | Caching | The **GitHub Actions cache**, as on hosted runners | GitHub serves it to self-hosted runners too, so there's no cache storage to run ([docker-node-minimal#351](https://github.com/chorrell/docker-node-minimal/issues/351)) |
 | Infrastructure | Terraform with state in HCP Terraform: `terraform/cluster` for the cluster, `terraform/arc` for the ARC Helm releases | Two roots, because the Helm and Kubernetes providers shouldn't be configured from a cluster created in the same root |
@@ -101,13 +101,15 @@ before real jobs run here and each pool's `max_nodes` defaults to 1.
 
 ## Security
 
-- **Never let pull requests from forks run here.** A runner registered on a
-  repository runs any job that asks for its label, including a
-  workflow a fork pull request adds or edits, and a personal account can't
-  restrict a runner to selected workflows. On a public repository the guard is
-  its fork-PR approval policy: **Require approval for all external
-  contributors**. Set it before the repository gets a scale set; the GitHub
-  provider can't manage it, so it isn't in github-settings.
+- **Never let pull requests from forks run here.** The runners are in the
+  organization's Default runner group, which every repository can use,
+  including a workflow a fork pull request adds or edits. On GitHub Free the
+  group can't be limited to selected repositories or workflows. The guard is
+  the organization's fork-PR approval policy, **Require approval for all
+  external contributors** (set 18 November 2026), which every repository
+  inherits. The GitHub provider can't manage it, so it isn't in
+  github-settings. Because the repositories are public, the Default group also
+  has **Allow public repositories** turned on.
 - ARC authenticates with a GitHub App. The DigitalOcean API token is a
   sensitive variable on the HCP Terraform workspace, not in the repo.
 - The build pools are tainted, so only pods that tolerate it (the runners)
@@ -117,13 +119,13 @@ before real jobs run here and each pool's `max_nodes` defaults to 1.
   runners. A job that runs here effectively has root on its build node.
   That's acceptable only because build nodes run nothing else, each runs one
   job and is removed when idle, and fork pull requests can't run without your
-  approval. Only add repositories you control.
-- The GitHub App needs **Administration: read and write** on each repository
-  to register runners there, which also lets it change that repository's
-  settings. Install it on the selected repositories only, never on all of
-  them. Its private key is written to the cluster through a write-only
-  argument, so it isn't in Terraform state; the cluster's kube token is in
-  both workspaces' state.
+  approval. Only repositories in the organization can use them.
+- The GitHub App only needs **Self-hosted runners: read and write** on the
+  organization (and **Metadata: read-only**, which every App gets). It needs
+  no repository Administration permission, which registering runners per
+  repository would. Its private key is written to the cluster through a
+  write-only argument, so it isn't in Terraform state; the cluster's kube
+  token is in both workspaces' state.
 
 ## Deploying
 
@@ -135,7 +137,7 @@ Applies are confirmed by hand in both.
 | Root | Workspace | Creates |
 | --- | --- | --- |
 | `terraform/cluster` | `doks-runners-cluster` | The cluster, system pool and build pools |
-| `terraform/arc` | `doks-runners-arc` | The ARC controller, a runner scale set per repository and pool, and the GitHub App secret |
+| `terraform/arc` | `doks-runners-arc` | The ARC controller, a runner scale set per pool for the organization, and the GitHub App secret |
 
 Apply `terraform/cluster` first; `terraform/arc` reads the cluster by name.
 
@@ -169,14 +171,14 @@ before they expire; an expired token makes every run fail.
 
 ### GitHub App
 
-ARC registers runners through a GitHub App owned by the chorrell account. The
-controller installs without it; it's needed once `repositories` lists a
-repository.
+ARC registers runners through a GitHub App owned by the `horrell-consulting`
+organization. The controller installs without it; it's needed once
+`runners_enabled` is set.
 
-1. Register a GitHub App under the personal account. Disable the webhook.
-   Repository permissions: **Administration: read and write**, **Metadata:
-   read-only**. Install it **only on this account**, with **Only select
-   repositories**.
+1. Register a GitHub App under the organization. Disable the webhook.
+   Organization permissions: **Self-hosted runners: read and write**. No
+   repository permissions beyond **Metadata: read-only**. Install it on the
+   organization.
 2. Generate a private key.
 3. On `doks-runners-arc`, set:
    - `github_app_id` and `github_app_installation_id`: plain Terraform
@@ -188,15 +190,17 @@ repository.
 To rotate the key, set the new value and bump `github_app_secret_revision`;
 write-only values aren't compared, so changing the key alone does nothing.
 
-### Adding a repository
+### Turning the runners on
 
-1. Set its fork-PR approval policy to **Require approval for all external
-   contributors** (Settings → Actions → General); see [Security](#security).
-2. Add it to the GitHub App's installation (**Only select repositories**).
-3. Add `owner/name` to `repositories` in `terraform/arc` and apply. It gets a
-   scale set for each pool.
-4. Use `runs-on: doks-amd64` or `runs-on: doks-amd64-large` in workflows that
-   run on push or `workflow_dispatch`.
+1. Check the organization's fork-PR approval policy is still **Require
+   approval for all external contributors** (Settings → Actions → General);
+   see [Security](#security).
+2. Set `runners_enabled = true` in `terraform/arc` and apply. It creates the
+   GitHub App secret and one scale set per pool.
+
+Any repository in the organization can then use `runs-on: doks-amd64` or
+`runs-on: doks-amd64-large` in workflows that run on push or
+`workflow_dispatch`. There's nothing to set per repository.
 
 ### Kubeconfig
 
@@ -214,11 +218,14 @@ doctl kubernetes cluster kubeconfig save doks-runners
 3. ~~A second, `c-8` build pool for generic jobs, and the ARC controller in
    `terraform/arc`~~ (both applied 18 November 2026, with no repositories
    yet).
-4. GitHub App, then the first repository. Confirm each pool scales up for a
-   job and back to 0 after it (or add the `doctl` fallback).
-5. Measure cold-start time and cost per job on both labels, against
+4. ~~Move to the `horrell-consulting` organization and switch the scale sets
+   from per repository to organization scope~~ (18 November 2026).
+5. GitHub App, then `runners_enabled` and the first workflow. Confirm each
+   pool scales up for a job and back to 0 after it (or add the `doctl`
+   fallback).
+6. Measure cold-start time and cost per job on both labels, against
    GitHub-hosted runners.
-6. Write up results here, and decide whether a custom runner image with
+7. Write up results here, and decide whether a custom runner image with
    common tools preinstalled is worth maintaining.
 
 ## Local development

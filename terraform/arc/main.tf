@@ -6,16 +6,17 @@ locals {
   pool_label_key = "doks-runners/pool"
   build_taint    = { key = "doks-runners/runner", value = "true", effect = "NoSchedule" }
 
-  # One scale set per repository and pool. Release names must be unique; runs-on labels repeat across repositories.
-  scale_sets = {
-    for pair in setproduct(sort(var.repositories), keys(var.runner_pools)) :
-    "${replace(pair[0], "/", "-")}-${pair[1]}" => {
-      repository = pair[0]
-      pool       = pair[1]
-      runs_on    = var.runner_pools[pair[1]].runs_on
-      max        = var.runner_pools[pair[1]].max_runners
+  # Runners register once for the organization, in its Default runner group, so every repository in it can use them.
+  github_config_url = "https://github.com/${var.github_organization}"
+
+  # One scale set per pool, named by its runs-on label. None until runners_enabled, so the controller can be installed
+  # before the GitHub App exists.
+  scale_sets = var.runners_enabled ? {
+    for pool, cfg in var.runner_pools : cfg.runs_on => {
+      pool = pool
+      max  = cfg.max_runners
     }
-  }
+  } : {}
 }
 
 # The controller and the runners get separate namespaces, as GitHub recommends.
@@ -32,9 +33,9 @@ resource "kubernetes_namespace_v1" "runners" {
 }
 
 # GitHub App credentials for every scale set. data_wo is write-only, so the private key never reaches state. Not
-# created until a repository is listed, so the controller can be installed before the App exists.
+# created until runners_enabled, so the controller can be installed before the App exists.
 resource "kubernetes_secret_v1" "github_app" {
-  count = length(var.repositories) > 0 ? 1 : 0
+  count = var.runners_enabled ? 1 : 0
 
   metadata {
     name      = "arc-github-app"
@@ -51,7 +52,7 @@ resource "kubernetes_secret_v1" "github_app" {
   lifecycle {
     precondition {
       condition     = var.github_app_id != null && var.github_app_installation_id != null
-      error_message = "Set github_app_id, github_app_installation_id and github_app_private_key before listing repositories."
+      error_message = "Set github_app_id, github_app_installation_id and github_app_private_key before setting runners_enabled."
     }
   }
 }
@@ -75,9 +76,9 @@ resource "helm_release" "runners" {
   version    = var.arc_chart_version
 
   values = [yamlencode({
-    githubConfigUrl    = "https://github.com/${each.value.repository}"
+    githubConfigUrl    = local.github_config_url
     githubConfigSecret = kubernetes_secret_v1.github_app[0].metadata[0].name
-    runnerScaleSetName = each.value.runs_on
+    runnerScaleSetName = each.key
 
     # An idle runner would keep a build node up at its full hourly price. 0 lets the pool scale to zero.
     minRunners = 0
