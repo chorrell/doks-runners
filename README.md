@@ -18,10 +18,10 @@ Jobs pick a size with `runs-on`:
 Runners use ARC's default image, which is minimal: jobs install what they need
 with `setup-*` actions or run in containers, and Docker is available.
 
-> **Status:** the cluster is running with both build pools (`c-8` and
-> `c-32`) at 0 nodes, as of 18 November 2026. The ARC root (`terraform/arc`)
-> is written but not applied, and no repository has runners yet; see
-> [Roadmap](#roadmap).
+> **Status:** as of 18 November 2026 the cluster is running with both build
+> pools (`c-8` and `c-32`) at 0 nodes, and the ARC controller is installed on
+> the system node. No repository has runners yet: that waits for the GitHub
+> App. See [Roadmap](#roadmap).
 
 ## Why DigitalOcean
 
@@ -211,10 +211,9 @@ doctl kubernetes cluster kubeconfig save doks-runners
 1. ~~Terraform: DOKS cluster, system pool, autoscaling build pool~~
    (`terraform/cluster`).
 2. ~~Apply it~~ (18 November 2026; the build pool sits at 0 nodes).
-3. ~~A second, `c-8` build pool for generic jobs~~ (applied 18 November
-   2026). ARC controller and runner scale sets in `terraform/arc` (written,
-   not applied): apply with no repositories, so only the controller is
-   installed.
+3. ~~A second, `c-8` build pool for generic jobs, and the ARC controller in
+   `terraform/arc`~~ (both applied 18 November 2026, with no repositories
+   yet).
 4. GitHub App, then the first repository. Confirm each pool scales up for a
    job and back to 0 after it (or add the `doctl` fallback).
 5. Measure cold-start time and cost per job on both labels, against
