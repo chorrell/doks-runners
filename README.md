@@ -18,10 +18,11 @@ Jobs pick a size with `runs-on`:
 Runners use ARC's default image, which is minimal: jobs install what they need
 with `setup-*` actions or run in containers, and Docker is available.
 
-> **Status:** as of 18 November 2026 the cluster is running with both build
-> pools (`c-8` and `c-32`) at 0 nodes, and the ARC controller is installed on
-> the system node. No runners are registered yet: that waits for the GitHub
-> App. See [Roadmap](#roadmap).
+> **Status:** as of 19 November 2026 the cluster is running with both build
+> pools (`c-8` and `c-32`) at 0 nodes. The ARC controller and both runner
+> scale sets (`doks-amd64` and `doks-amd64-large`) are registered for the
+> `horrell-consulting` organization, with their listeners on the system node.
+> No job has run on them yet. See [Roadmap](#roadmap).
 
 ## Why DigitalOcean
 
@@ -220,12 +221,13 @@ doctl kubernetes cluster kubeconfig save doks-runners
    yet).
 4. ~~Move to the `horrell-consulting` organization and switch the scale sets
    from per repository to organization scope~~ (18 November 2026).
-5. GitHub App, then `runners_enabled` and the first workflow. Confirm each
-   pool scales up for a job and back to 0 after it (or add the `doctl`
-   fallback).
-6. Measure cold-start time and cost per job on both labels, against
+5. ~~GitHub App and `runners_enabled`~~ (19 November 2026: both scale sets
+   registered, build pools still at 0 nodes).
+6. The first workflow. Confirm each pool scales up for a job and back to 0
+   after it (or add the `doctl` fallback).
+7. Measure cold-start time and cost per job on both labels, against
    GitHub-hosted runners.
-7. Write up results here, and decide whether a custom runner image with
+8. Write up results here, and decide whether a custom runner image with
    common tools preinstalled is worth maintaining.
 
 ## Local development
