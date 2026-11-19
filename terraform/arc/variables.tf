@@ -22,7 +22,7 @@ variable "runners_enabled" {
     the organization and its variables are set, and the organization's fork-PR approval is all external contributors.
   EOT
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "runner_pools" {
